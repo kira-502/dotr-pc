@@ -1,0 +1,17 @@
+/build/
+/gen/out/
+*.iso
+*.log
+__pycache__/
+/gen/decomp/
+/recomp/input/
+/recomp/out/
+# run output and personal files
+shots/
+Saves/
+Logs/
+Reports/
+*.gcap
+DotR-PC.ini
+botduel-*.log
+tools/release-guard.txt

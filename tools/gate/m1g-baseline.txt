@@ -1,0 +1,13 @@
+# Bot-duel baseline for tools\gate.ps1 (the file keeps its old name): the gate runs exactly the seeds listed here and
+# compares each result line. Recorded 18 Oct 2026 from lane/plat 8e104ef (game code built with every local starting
+# at zero: results no longer move with dotr.dll's code layout); lane G's oracle agrees with 8e104ef on all three.
+# DotR.exe --boot --headless --fast --bot-duel <seed>. Seeds end in a win within 13 turns, both sides winning.
+seed 2: duel end: winner side 1, reason 3, turns 9, lp 4000 2300, frames 25409, hash f8500d0ab83ca780
+seed 17: duel end: winner side 1, reason 0, turns 13, lp 0 3700, frames 31939, hash 229563129dbb5deb
+seed 18: duel end: winner side 0, reason 0, turns 7, lp 4000 0, frames 23765, hash a0d160f320a66a19
+# Speed: the game thread's own CPU time per duel field (bot duel "cpu:" line), recorded 18 Oct 2026 21:2x from main
+# 3baa3dc + the speed check (headless, no drawing: guards game-logic speed; renderer speed is the picture step's).
+# The gate fails a seed above 1.5x of these.
+cpu seed 2: 3157 us per field
+cpu seed 17: 2607 us per field
+cpu seed 18: 3204 us per field
