@@ -2,7 +2,7 @@
  * rc_port.h - the interface between lane P (runtime) and lane R (the module recompiler). v1 (agreed with lane P, 17 Oct).
  * Change only by agreement between the two lanes; note each change in the log at the bottom.
  *
- * Model (PORT-PLAN.md 4.3): the game's own loader still copies a module's bytes to 0x01E00000 and calls
+ * Model: the game's own loader still copies a module's bytes to 0x01E00000 and calls
  * mwOverlayInit. The translated code of all 762 modules is linked into dotr.dll; the module bytes in PS2 memory are
  * its data, and the place where x86 jumps into the translated functions are written.
  *

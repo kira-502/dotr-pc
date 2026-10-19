@@ -1,7 +1,7 @@
 /*
  * hw.h - the interface between lane P (platform/runtime) and lane G (graphics) of the DotR PC port.
  *
- * Model (PORT-PLAN.md section 4.1): the process is 32-bit and PS2 RAM sits at its console addresses, so a PS2
+ * Model: the process is 32-bit and PS2 RAM sits at its console addresses, so a PS2
  * address IS a pointer: PS2_PTR(0x00317490) is the byte at 0x00317490. The scratchpad is at 0x70000000 and the
  * uncached mirrors (0x2xxxxxxx / 0x3xxxxxxx) alias main RAM. Graphics reads DMA chains, packets and textures
  * straight out of that memory; nothing is copied across this interface.

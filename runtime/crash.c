@@ -38,6 +38,7 @@ static void where(uintptr_t a, char *out, int n)
         snprintf(out, n, "%s+0x%llX (%s:%lu)", s->Name, disp, f ? f + 1 : line.FileName, line.LineNumber);
     } else snprintf(out, n, "%s+0x%llX", s->Name, disp);
 }
+void crash_where(uintptr_t a, char *out, int n) { where(a, out, n); }    /* runtime/slackmark.c */
 
 static const ps2_func *nearest(uintptr_t eip)
 {
@@ -422,4 +423,6 @@ void crash_install(void)
     DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &g_game_thread, 0, FALSE,
                     DUPLICATE_SAME_ACCESS);
     CreateThread(NULL, 0, watchdog, NULL, 0, NULL);
+    if (getenv("DOTR_WATCH"))                 /* the DOTR_BOT_WATCH write watch, armed from boot */
+        crash_watch_write((uint32_t)strtoul(getenv("DOTR_WATCH"), NULL, 16));
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""rcgen.py - the module recompiler: EE (R5900) module code -> C (lane R, PORT-PLAN.md 4.3).
+"""rcgen.py - the module recompiler: EE (R5900) module code -> C (lane R).
 
 Input is the decomp's own split (a read-only copy in recomp/input, see README.md): one .s file per function with
 the instruction words in its comments, and the module's data files (jump tables `jtbl_*`). The instruction words are

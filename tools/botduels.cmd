@@ -1,5 +1,5 @@
 @echo off
-rem Headless bot duels (PORT-PLAN 5.1): N computer-vs-computer duels with seeds S..S+N-1, one log each.
+rem Headless bot duels: N computer-vs-computer duels with seeds S..S+N-1, one log each.
 rem usage: tools\botduels.cmd [count=10] [first seed=1] [out dir=build\botduels]
 rem Each duel is its own DotR.exe run (fresh state, same seed -> same duel). Compare two builds by comparing the
 rem logs: every turn line carries a hash of the whole duel state.

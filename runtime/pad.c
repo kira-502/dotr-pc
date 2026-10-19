@@ -160,8 +160,10 @@ int rt_pad_read(int port, unsigned char *buf)
         int pad = xinput(port, &b, axes);
         if (port == 0) {
             b |= keyboard();
+#if !DOTR_VANILLA
             /* hold to fast-forward: Tab, or the right stick pushed right (the game never reads that axis) */
             rt_fast_forward = (gfx_window_focused() && (GetAsyncKeyState(VK_TAB) & 0x8000)) || axes[0] >= 0xE0;
+#endif
             {   /* the right stick pushed LEFT (the game never reads that axis): "report this moment" (runtime/report.c) */
                 static int held;
                 void report_stick(void);

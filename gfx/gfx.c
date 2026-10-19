@@ -328,10 +328,10 @@ static void png_chunk(FILE *f, const char *type, const u8 *data, u32 n)
 }
 
 /* An RGB PNG with stored (uncompressed) deflate blocks: no compressor needed, ~1 MB for 640x448. */
-static int write_png(const char *path, const u32 *rgba, int w, int h)
+static int write_png(const char *path, const u32 *rgba, int w, int h, int alpha)
 {
     static const u8 sig[8] = { 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A };
-    size_t row = (size_t)w * 3 + 1, raw_n = row * (size_t)h, nblk = (raw_n + 65534) / 65535, z_n = 2 + raw_n + nblk * 5 + 4;
+    size_t px = alpha ? 4 : 3, row = (size_t)w * px + 1, raw_n = row * (size_t)h, nblk = (raw_n + 65534) / 65535, z_n = 2 + raw_n + nblk * 5 + 4;
     u8 *raw = (u8 *)malloc(raw_n), *z = (u8 *)malloc(z_n), ihdr[13];
     size_t i, o = 0, done = 0;
     u32 a = 1, b = 0;
@@ -343,7 +343,8 @@ static int write_png(const char *path, const u32 *rgba, int w, int h)
         r[0] = 0;   /* filter: none */
         for (x = 0; x < w; x++) {
             u32 c = rgba[(size_t)y * w + x];
-            r[1 + x * 3] = (u8)c; r[2 + x * 3] = (u8)(c >> 8); r[3 + x * 3] = (u8)(c >> 16);
+            r[1 + x * px] = (u8)c; r[2 + x * px] = (u8)(c >> 8); r[3 + x * px] = (u8)(c >> 16);
+            if (alpha) r[4 + x * px] = (u8)(c >> 24);
         }
     }
     z[o++] = 0x78; z[o++] = 0x01;
@@ -357,7 +358,7 @@ static int write_png(const char *path, const u32 *rgba, int w, int h)
     z[o++] = (u8)(b >> 8); z[o++] = (u8)b; z[o++] = (u8)(a >> 8); z[o++] = (u8)a;
     ihdr[0] = (u8)(w >> 24); ihdr[1] = (u8)(w >> 16); ihdr[2] = (u8)(w >> 8); ihdr[3] = (u8)w;
     ihdr[4] = (u8)(h >> 24); ihdr[5] = (u8)(h >> 16); ihdr[6] = (u8)(h >> 8); ihdr[7] = (u8)h;
-    ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;   /* 8-bit RGB, no interlace */
+    ihdr[8] = 8; ihdr[9] = alpha ? 6 : 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;   /* 8-bit RGB(A), no interlace */
     f = fopen(path, "wb");
     if (f) {
         fwrite(sig, 1, 8, f);
@@ -371,12 +372,14 @@ static int write_png(const char *path, const u32 *rgba, int w, int h)
     return ok;
 }
 
+int gfx_write_png(const char *path, const u32 *rgba, int w, int h) { return write_png(path, rgba, w, h, 1); }
+
 int gfx_save_picture(const char *png_path)
 {
     const u32 *img;
     int w, h;
     if (!gfx_display_frame(&img, &w, &h) || w <= 0 || h <= 0) return 0;
-    return write_png(png_path, img, w, h);
+    return write_png(png_path, img, w, h, 0);
 }
 
 int gfx_write_bmp(const char *path, const hw_u32 *rgba, int w, int h)

@@ -1,7 +1,7 @@
 # recomp/ — the module recompiler (lane R)
 
 Translates the 762 duel modules (EE/R5900 MIPS, 8,620 functions, 3.03 M instructions) into C, so they run natively
-in the port (PORT-PLAN.md 4.3). Module decompilation stays off: this is automatic translation.
+in the port. Module decompilation stays off: this is automatic translation.
 
 ## Input (never committed)
 

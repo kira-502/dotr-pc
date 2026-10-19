@@ -90,16 +90,17 @@ target_link_libraries(gfxreplay gfx winmm)
 target_link_options(gfxreplay PRIVATE /MAP)
 
 # VU0 maths: generated at build time by vu0/gen_vu0.py from the pinned decomp copy lane P keeps in gen/decomp
-# (it needs asm/matchings/main_027,028,057,058,059 and config/symbol_addrs.txt). A hand-made gfx/vu0/out/
+# (it needs asm/matchings/main_027,028,057,058,059, or render/ and sdk/ since the decomp's file layout of 32a9475b, and
+# config/symbol_addrs.txt). A hand-made gfx/vu0/out/
 # (python gfx/vu0/gen_vu0.py <decomp-root> gfx/vu0/out) is used when that copy is missing.
 set(DOTR_DECOMP "${CMAKE_SOURCE_DIR}/gen/decomp" CACHE PATH "pinned decomp copy (src, config, asm/matchings)")
 find_package(Python3 COMPONENTS Interpreter)
 set(VU0_FUNCS "")
-if(Python3_FOUND AND EXISTS "${DOTR_DECOMP}/asm/matchings/main_059")
+if(Python3_FOUND AND (EXISTS "${DOTR_DECOMP}/asm/matchings/main_059" OR EXISTS "${DOTR_DECOMP}/asm/matchings/render/rhgeom"))
   set(VU0_FUNCS ${CMAKE_CURRENT_BINARY_DIR}/vu0/vu0_funcs.c)
   add_custom_command(OUTPUT ${VU0_FUNCS}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/vu0/gen_vu0.py "${DOTR_DECOMP}" ${CMAKE_CURRENT_BINARY_DIR}/vu0
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/vu0/gen_vu0.py
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/vu0/gen_vu0.py "${DOTR_DECOMP}/COMMIT"   # a re-pin regenerates it
     COMMENT "gen_vu0: VU0 maths from the decomp's matched assembly")
 elseif(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/vu0/out/vu0_funcs.c)
   set(VU0_FUNCS ${CMAKE_CURRENT_SOURCE_DIR}/vu0/out/vu0_funcs.c)

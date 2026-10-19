@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Struct layout test (PORT-PLAN.md 4.2): every file-scope struct's size and member offsets, compiled by
+"""Struct layout test: every file-scope struct's size and member offsets, compiled by
 Metrowerks (the PS2 build) and by clang-cl (the PC build), must agree.
 
   py gen/layout.py gen   <decomp snapshot> <port out> <work dir>   -> probe sources + manifest.json

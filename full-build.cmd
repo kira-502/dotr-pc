@@ -2,7 +2,7 @@
 rem One command from the pinned decomp to a checked build (windowless checks only, no game window).
 rem usage: full-build.cmd [disc.iso]
 rem   1. snapshot the pinned decomp (WSL Ubuntu-24.04, read-only; DOTR_DECOMP = its WSL path,
-rem      default ~/decomp/port_pin_3b81711) -> gen\decomp
+rem      default ~/decomp/port_pin_32a9475b) -> gen\decomp
 rem   2. port generator -> gen\out
 rem   3. build (build.cmd) -> build\Release\bin
 rem   4. checks: self-test, gfx_tests, gfx_vu0_tests, snd_tests, gfxboot on SLUS_205.15 from the disc,
@@ -15,7 +15,7 @@ if "%ISO%"=="" set ISO=%ROOT%..\ISOs\Yu-Gi-Oh! The Duelists of the Roses (USA).i
 set BIN=%ROOT%build\Release\bin
 rem the build translates the VU1 programs from the same disc (gfx/CMakeLists.txt)
 set DOTR_ISO=%ISO%
-if "%DOTR_DECOMP%"=="" set DOTR_DECOMP=~/decomp/port_pin_3b81711
+if "%DOTR_DECOMP%"=="" set DOTR_DECOMP=~/decomp/port_pin_32a9475b
 
 echo === 1/4 decomp snapshot
 for /f "usebackq delims=" %%p in (`wsl -d Ubuntu-24.04 wslpath -a "%ROOT%."`) do set WROOT=%%p

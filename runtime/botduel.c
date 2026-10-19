@@ -1,5 +1,5 @@
 /*
- * Headless bot duels (PORT-PLAN 5.1): computer against computer, fixed seed, a log per duel, loud stops.
+ * Headless bot duels: computer against computer, fixed seed, a log per duel, loud stops.
  *
  *   DotR.exe --boot --headless --fast --bot-duel <seed> [--bot-decks <a>,<b>] [--bot-map <n>] [--bot-log <file>]
  *

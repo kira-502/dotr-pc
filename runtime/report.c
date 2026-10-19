@@ -1,5 +1,5 @@
 /*
- * Reports (the owner's "elite logging", dotr-big/LOGGING-PLAN.md step 1):
+ * Reports (what a player sends us when something goes wrong):
  *
  *   - a flight recorder: the last ~60 s of events in memory (every log line, game-mode changes, duel start/end, one
  *     timing line per field), written out only in a report;
@@ -30,6 +30,8 @@ const char *rc_current_module(void);                  /* recomp/ */
 extern long long SzGame_GetMode(int which);
 extern int SzGame_GetMenuNum(int which);
 extern int SzDuel_Xax2New(int card);
+extern int SzDuel_GetUnitStatus(int side, int unit, int flag);
+extern int SzModel_IsModelDisp(int index);
 #endif
 
 #define DUEL 0x00317490u
@@ -318,6 +320,39 @@ static void first_line(const char *what, char *out, int cap)
 static volatile LONG g_in_report;
 static DWORD g_last_manual;
 
+/* The duel's units (BUG-2, a deck leader missing from the board): the game's unit records (duelUnits, 11 a side, slot
+ * 0 = the leader), with the status bits, the hidden byte 0x58 and whether the unit's 3D model is shown. */
+#define UNITS 0x00318280u
+static void report_units(FILE *f)
+{
+    int s, i, b;
+    fprintf(f, "units (side.slot: card, cell x,z, slot byte 0x45, kind 0x3E, status bits 0-5, hidden 0x58, model shown; record bytes):\n");
+    for (s = 0; s < 2; s++)
+        for (i = 0; i < 11; i++) {
+            const uint8_t *r = (const uint8_t *)(uintptr_t)(UNITS + 0x3F4u * s + 0x5Cu * i);
+            char name[64], bits[8], model[24];
+            if (r[0x45] >= 11) continue;
+#ifndef DOTR_NO_GAME
+            for (b = 0; b < 6; b++) bits[b] = SzDuel_GetUnitStatus(s, i, b) ? '1' : '0';
+            bits[6] = 0;
+            if (i <= 5) {
+                int idx = i == 0 ? 30 + s : 20 + 5 * s + i - 1;
+                snprintf(model, sizeof model, "%s (model %d)", SzModel_IsModelDisp(idx) ? "yes" : "NO", idx);
+            } else snprintf(model, sizeof model, "-");
+#else
+            (void)b;
+            snprintf(bits, sizeof bits, "?");
+            snprintf(model, sizeof model, "?");
+#endif
+            fprintf(f, "  %d.%-2d %s (%u), cell %u,%u, slot %u, kind %02X, status %s, hidden %02X, model %s\n", s, i,
+                    card_name(*(const uint16_t *)(r + 0x3C), name, sizeof name), *(const uint16_t *)(r + 0x3C), r[0x40],
+                    r[0x41], r[0x45], r[0x3E], bits, r[0x58], model);
+            fprintf(f, "       ");
+            for (b = 0; b < 0x5C; b++) fprintf(f, "%02X%s", r[b], (b & 15) == 15 ? " " : "");
+            fprintf(f, "\n");
+        }
+}
+
 /* kind: "crash", "hang", "F12", "stick"; why: the first-line lead-in; callpath: lines for crashes/hangs or NULL;
  * picture: 1 = gfx_save_picture is safe here (the game thread); capture: 0 none, 1 next field, 2 now (crash/hang) */
 static void report_make(const char *kind, const char *why, const char *callpath, int picture, int capture)
@@ -359,6 +394,7 @@ static void report_make(const char *kind, const char *why, const char *callpath,
                         k < 0x20 ? duelist_name(k, a, sizeof a) : (snprintf(b, sizeof b, "player (pad %d)", k - 100), b),
                         U16(DUEL + 0x350 * s + 0x33A));
             }
+            report_units(f);
         }
 #ifndef DOTR_NO_GAME
         fprintf(f, "menu numbers: %d %d %d %d %d\n", SzGame_GetMenuNum(0), SzGame_GetMenuNum(1), SzGame_GetMenuNum(2),

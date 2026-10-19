@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DotR-PC port generator (PORT-PLAN.md 4.2).
+"""DotR-PC port generator.
 
 Turns a pinned decomp snapshot (gen/decomp, made by fetch_decomp.sh) into a PC-compilable copy in gen/out:
   - game C (Metrowerks files) and the C library (newlib/libgcc, ee-gcc 2.96 files); Sony's libraries are
@@ -37,7 +37,7 @@ gcc = {}
 for ln in open(os.path.join(D, 'config/gcc_files.txt')):
     ln = ln.strip()
     if ln and not ln.startswith('#'):
-        p = ln.split(); gcc[os.path.basename(p[0])] = p[1]
+        p = ln.split(); gcc[p[0].split('src/', 1)[-1].replace('/', '_')] = p[1]     # the snapshot's flat names (fetch_decomp.sh)
 allc = sorted(f for f in os.listdir(os.path.join(D, 'src')) if f.endswith('.c'))
 libc_files = [f for f in allc if gcc.get(f, '').startswith('2.96')]
 sony_files = [f for f in allc if f in gcc and not gcc[f].startswith('2.96')]
@@ -131,6 +131,12 @@ def top_level_functions(t):
 rules_path = os.path.join(here, 'rules.json')
 rules = json.load(open(rules_path)) if os.path.exists(rules_path) else {}
 stackslack.COPY_SINKS = set(rules.get('copy_whole_sinks', []))   # locals handed to these start at zero
+stackslack.MARK = bool(os.environ.get('PORTER_SLACK_MARK'))         # the marker build (gen/stackslack.py)
+SLACK_MARK_HOOKS = {'render_exprim.c': [
+    ('s32 ExSortPrim_Pipe(s32 cursorIn, s32 prim, s32 ot, s32 z) {',
+     ' rt_mark_prim((const void *)prim, __builtin_return_address(0));'),
+    ('int ExSortNode_Pipe(int cursor, void *header_v, int count, s32 vertices_v, void *chain_v, int z)\n{',
+     ' rt_mark_node(header_v, __builtin_return_address(0));')]}
 # EE/GS register addresses by name (the named decomp, include/ee_regs.h): gen/mmio.py turns them back into addresses
 ee_reg_names = {}
 if os.path.exists(os.path.join(D, 'include', 'ee_regs.h')):
@@ -154,6 +160,10 @@ for f in allc:
         if pt['file'] == f:
             if pt['old'] not in t: sys.exit('rules.json source patch no longer applies: %s (%s)' % (f, pt['why']))
             t = t.replace(pt['old'], pt['new'])
+    if stackslack.MARK:                 # the marker build: the packet readers check what they read (runtime/slackmark.c)
+        for old_, new_ in SLACK_MARK_HOOKS.get(f, []):
+            if old_ not in t: sys.exit('marker build: reader hook no longer applies in %s: %r' % (f, old_[:60]))
+            t = t.replace(old_, old_ + new_)
     while True:
         m = ASMFUNC.search(t)
         if not m: break
@@ -443,6 +453,11 @@ with open(os.path.join(inc, 'port.h'), 'w', newline='\n') as w:
             'int rt_first_mode(int mode);\n')
     w.write('/* pad script v2 (runtime/padscript.c): a story event window is drawn (rules.json) */\n'
             'void rt_dialog_drawn(void);\n')
+    w.write('/* the EE FPU\'s add (rounds toward zero) where the PC\'s rounding changes the game (runtime/eefloat.c, '
+            'rules.json) */\nfloat ee_add_rz(float a, float b);\n')
+    w.write('/* the marker build (PORTER_SLACK_MARK=1, gen/stackslack.py): packet readers check what they read '
+            '(runtime/slackmark.c) */\nvoid rt_mark_prim(const void *prim, void *ret);\n'
+            'void rt_mark_node(const void *header, void *ret);\n')
     w.write('/* C-library names are renamed in the objects (renames.txt), not here */\n')
     w.write('/* old address names still used in some files */\n')
     for a, b in old_names:

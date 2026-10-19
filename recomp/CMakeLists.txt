@@ -1,4 +1,4 @@
-# Lane R: the module recompiler (PORT-PLAN.md 4.3). rcgen.py translates; the tests are windowless.
+# Lane R: the module recompiler. rcgen.py translates; the tests are windowless.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 # The EE does a multiply and an add as two roundings: never fuse them.

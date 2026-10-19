@@ -64,6 +64,21 @@ static float ee_clamp(float x)
     return x;
 }
 
+/* The EE FPU's ADD.S: rounded toward zero (an overflow then gives FLT_MAX by itself). Used only where the PC's
+ * round-to-nearest changes what the game does (gen/rules.json): the camera's yaw wrap fmod(2pi + yaw, 2pi) of a
+ * camera straight above its look point gives 3FC90FDC (just above pi/2) on the PC but 3FC90FD8 (below) on the PS2;
+ * the fixed angle is then 16384 instead of 16383 and the board camera's look direction loses its tiny sideways part
+ * (exactly 0 at RAM 0x01FE04F0 on the PS2's layout: BUG-8, PCSX2's "Zoom Glitch" patch puts 1e-5 there). */
+float ee_add_rz(float a, float b)
+{
+    unsigned csr = _mm_getcsr();
+    float r;
+    _mm_setcsr(csr | 0x6000u | MXCSR_TRAPS);
+    r = _mm_cvtss_f32(_mm_add_ss(_mm_set_ss(a), _mm_set_ss(b)));
+    _mm_setcsr(csr);
+    return r;
+}
+
 /* one lane, EE style */
 static float ee_op(int op, float a, float b)
 {

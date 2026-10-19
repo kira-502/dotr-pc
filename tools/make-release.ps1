@@ -5,13 +5,14 @@
 # usage: powershell -File tools\make-release.ps1 [-Dev]
 #   -Dev: the developer build for private sharing (build.cmd Release, switches on): DotR-PC-dev with the console
 #   DotR.exe and DEVELOPING.md added
-param([switch]$Dev)
+#   -Name <name>: the folder and zip name (default DotR-PC / DotR-PC-dev), e.g. DotR-PC-vanilla-2026-10-19
+param([switch]$Dev, [string]$Name)
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $cfg = if ($Dev) { "Release" } else { "Package" }   # Package: Release without the developer switches
 $bin = Join-Path $root "build\$cfg\bin"
 $out = Join-Path (Split-Path -Parent $root) "DotR-PC-builds\release"
-$name = if ($Dev) { "DotR-PC-dev" } else { "DotR-PC" }
+$name = if ($Name) { $Name } elseif ($Dev) { "DotR-PC-dev" } else { "DotR-PC" }
 $dst = Join-Path $out $name
 $zip = Join-Path $out "$name.zip"
 $exe = "Yu-Gi-Oh! The Duelists of the Roses.exe"

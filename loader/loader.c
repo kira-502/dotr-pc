@@ -1,5 +1,5 @@
 /*
- * DotR.exe - the tiny loader (PORT-PLAN.md 4.1).
+ * DotR.exe - the tiny loader.
  *
  * Linked at /BASE:0x10000 /FIXED with no C runtime. Windows (WOW64) already places heaps, stacks and mapped
  * files in low memory before any of our code runs, so reserving at run time is too late (measured: 0x20000..

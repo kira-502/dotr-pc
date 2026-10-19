@@ -1,7 +1,8 @@
 /* vu1.c - VU1 micro-mode interpreter.
  *
  * Timing model: one instruction pair per cycle plus stalls. An FMAC (or lower VF-writing) result is ready 4 cycles
- * after issue; an instruction that reads a VF register (or ACC) before it is ready stalls. MAC/status/clip flags
+ * after issue; an instruction that reads a VF register before it is ready stalls (ACC is forwarded: accumulate
+ * chains such as MULA, MADDA, MADDA, MADD issue one per cycle). MAC/status/clip flags
  * become visible 4 cycles after the instruction that set them. Q is ready 7 (DIV, SQRT) or 13 (RSQRT) cycles
  * after issue; reading it earlier gives the old Q. P (EFU) likewise, with the documented latencies.
  * Arithmetic: VU floats have no Inf/NaN/denormals (handled by clamping, flush to zero) and round toward zero.
@@ -693,13 +694,22 @@ static __forceinline int pair_step(runst *st, u32 pc, u32 lo, u32 hi, u64 skip, 
         exec_lower(lo, pc, &lr, lreads, &nl, &cyc);
     else
         lr.writes_vf = lr.branch = lr.writes_vi = 0;
-    /* stalls on not-yet-ready VF sources */
+    /* stalls on not-yet-ready VF sources (not ACC: the FMAC pipeline forwards it, so MULA/MADDA/MADD chains issue
+     * back to back; stalling them made the battle clip program read the sign flag of a later instruction, BUG-9) */
     stall_to = cyc;
     for (k = 0; k < nu; k++)
-        if (ureads[k] && !((skip >> ureads[k]) & 1) && CYC_GT(vf_ready[ureads[k]], stall_to)) stall_to = vf_ready[ureads[k]];
+        if (ureads[k] && ureads[k] != REG_ACC && !((skip >> ureads[k]) & 1) && CYC_GT(vf_ready[ureads[k]], stall_to))
+            stall_to = vf_ready[ureads[k]];
     for (k = 0; k < nl; k++)
         if (lreads[k] && !((skip >> lreads[k]) & 1) && CYC_GT(vf_ready[lreads[k]], stall_to)) stall_to = vf_ready[lreads[k]];
     cyc = stall_to;
+    /* the pair issues when its stalls end (a WAITQ in the lower slot included): an upper instruction that reads Q
+     * sees a DIV result that landed while it waited (the battle clipper's MULq + WAITQ pair, BUG-11) */
+    if (q_busy && upper_reads_q(hi) && CYC_LE(q_ready, cyc)) {
+        qp_update(cyc);
+        nu = 0;
+        exec_upper(hi, &ur, ureads, &nu);
+    }
 
     /* write back (writes to VF0 and VI0 are never made: every result path skips register 0) */
     if (ur.writes_vf) { write_vec(&vu1.vf[ur.reg], &ur.val, ur.dest); vf_ready[ur.reg] = cyc + 4; }
@@ -773,10 +783,51 @@ static void run_end(const runst *st, unsigned int csr)
     _mm_setcsr(csr);
 }
 
+void vu1_disasm(u32 hi, u32 lo, char *out, size_t outsz);
+
+/* DOTR_VU1_TRACE=<n> (with DOTR_VU1X=0): logs each program run's number and start, and for run n every instruction
+ * pair with the registers and data memory it changed (digging into one batch of a capture replay) */
+static void run_traced(runst *st)
+{
+    static vu1_state before;
+    char d[160];
+    for (;;) {
+        u32 lo, hi, pc = st->pc, k;
+        int stop;
+        memcpy(&lo, vu1.micro + pc * 8, 4);
+        memcpy(&hi, vu1.micro + pc * 8 + 4, 4);
+        before = vu1;
+        stop = pair_step(st, pc, lo, hi, 0, 0, 0);
+        vu1_disasm(hi, lo, d, sizeof d);
+        hw_log(2, "vu1t %04x c%llu %s", pc * 8, (unsigned long long)(st->cycle - st->start), d);
+        for (k = 0; k < 32; k++)
+            if (memcmp(&before.vf[k], &vu1.vf[k], 16))
+                hw_log(2, "vu1t     vf%02u = %g %g %g %g  (%08x %08x %08x %08x)", k, vu1.vf[k].f[0], vu1.vf[k].f[1],
+                       vu1.vf[k].f[2], vu1.vf[k].f[3], vu1.vf[k].u[0], vu1.vf[k].u[1], vu1.vf[k].u[2], vu1.vf[k].u[3]);
+        for (k = 0; k < 16; k++)
+            if (before.vi[k] != vu1.vi[k]) hw_log(2, "vu1t     vi%02u = %04x", k, vu1.vi[k]);
+        if (before.clip != vu1.clip) hw_log(2, "vu1t     clip = %06x", vu1.clip);
+        for (k = 0; k < VU1_MEM_BYTES; k += 16)
+            if (memcmp(before.mem + k, vu1.mem + k, 16)) {
+                const float *f = (const float *)(vu1.mem + k);
+                const u32 *w = (const u32 *)(vu1.mem + k);
+                hw_log(2, "vu1t     mem %03x = %g %g %g %g  (%08x %08x %08x %08x)", k / 16, f[0], f[1], f[2], f[3],
+                       w[0], w[1], w[2], w[3]);
+            }
+        if (stop) break;
+    }
+}
+
 static void run_interp(void)
 {
     runst st;
     unsigned int csr = run_begin(&st);
+    static long trace_run = -2, run_no;
+    if (trace_run == -2) trace_run = getenv("DOTR_VU1_TRACE") ? atol(getenv("DOTR_VU1_TRACE")) : -1;
+    if (trace_run >= 0) {
+        hw_log(2, "vu1t run %ld at %04x", run_no, st.pc * 8);
+        if (run_no++ == trace_run) { run_traced(&st); run_end(&st, csr); return; }
+    }
     for (;;) {
         u32 lo, hi;
         memcpy(&lo, vu1.micro + st.pc * 8, 4);
@@ -826,8 +877,26 @@ void vu1_disasm(u32 hi, u32 lo, char *out, size_t outsz)
     } else snprintf(ub, sizeof ub, "?u%02x", op);
     if (hi & 0x80000000u) { float f; memcpy(&f, &lo, 4); snprintf(lb, sizeof lb, "LOI %g", (double)f); }
     else {
-        u32 lop = lo >> 25;
-        if (lop == 0x40) snprintf(lb, sizeof lb, "lower40 ext=%02x it=%u is=%u", ((lo >> 4) & 0x7C) | (lo & 3), FT(lo), FS(lo));
+        static const char *l1[0x30] = {   /* lo >> 25 */
+            "LQ", "SQ", 0, 0, "ILW", "ISW", 0, 0, "IADDIU", "ISUBIU", 0, 0, 0, 0, 0, 0,
+            "FCEQ", "FCSET", "FCAND", "FCOR", "FSEQ", "FSSET", "FSAND", "FSOR", "FMEQ", 0, "FMAND", "FMOR", "FCGET", 0, 0, 0,
+            "B", "BAL", 0, 0, "JR", "JALR", 0, 0, "IBEQ", "IBNE", 0, 0, "IBLTZ", "IBGTZ", "IBLEZ", "IBGEZ" };
+        static const char *s1[0x40] = { [0x30] = "IADD", [0x31] = "ISUB", [0x32] = "IADDI", [0x34] = "IAND", [0x35] = "IOR" };
+        static const char *s2[0x80] = { [0x30] = "MOVE", [0x31] = "MR32", [0x34] = "LQI", [0x35] = "SQI", [0x36] = "LQD",
+            [0x37] = "SQD", [0x38] = "DIV", [0x39] = "SQRT", [0x3A] = "RSQRT", [0x3B] = "WAITQ", [0x3C] = "MTIR",
+            [0x3D] = "MFIR", [0x3E] = "ILWR", [0x3F] = "ISWR", [0x40] = "RNEXT", [0x41] = "RGET", [0x42] = "RINIT",
+            [0x43] = "RXOR", [0x64] = "MFP", [0x68] = "XTOP", [0x69] = "XITOP", [0x6C] = "XGKICK", [0x70] = "ESADD",
+            [0x71] = "ERSADD", [0x72] = "ELENG", [0x73] = "ERLENG", [0x74] = "EATANxy", [0x75] = "EATANxz",
+            [0x76] = "ESUM", [0x78] = "ESQRT", [0x79] = "ERSQRT", [0x7A] = "ERCPR", [0x7B] = "WAITP", [0x7C] = "ESIN",
+            [0x7D] = "EATAN", [0x7E] = "EEXP" };
+        u32 lop = lo >> 25, e2 = ((lo >> 4) & 0x7C) | (lo & 3), fsf = (lo >> 21) & 3, ftf = (lo >> 23) & 3;
+        const char *nm = lop < 0x30 ? l1[lop] : lop == 0x40 ? ((lo & 0x3F) < 0x3C ? s1[lo & 0x3F] : s2[e2]) : 0;
+        (void)fsf; (void)ftf;
+        if (lo == 0x8000033Cu) snprintf(lb, sizeof lb, "NOP");
+        else if (nm && lop == 0x40 && (lo & 0x3F) < 0x3C) snprintf(lb, sizeof lb, "%s vi%02u, vi%02u, vi%02u", nm, FD(lo), FS(lo), FT(lo));
+        else if (nm && lop == 0x40) snprintf(lb, sizeof lb, "%s.%s ft=%u fs=%u (fsf %c ftf %c)", nm, dests(DEST(lo)), FT(lo), FS(lo), bcn[fsf], bcn[ftf]);
+        else if (nm) snprintf(lb, sizeof lb, "%s.%s it=%u is=%u imm=%d imm24=%06x", nm, dests(DEST(lo)), FT(lo), FS(lo), imm11(lo), lo & 0xFFFFFF);
+        else if (lop == 0x40) snprintf(lb, sizeof lb, "lower40 ext=%02x it=%u is=%u", e2, FT(lo), FS(lo));
         else snprintf(lb, sizeof lb, "lower%02x it=%u is=%u imm=%d", lop, FT(lo), FS(lo), imm11(lo));
     }
     snprintf(out, outsz, "%-36s %s%s", ub, lb, (hi & 0x40000000u) ? "  [E]" : "");

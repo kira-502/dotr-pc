@@ -1,5 +1,6 @@
 /* gs_draw.c - software GS rasterizer: points, lines, triangles, sprites; texture, fog, tests, blending. */
 #include <math.h>
+#include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <emmintrin.h>
@@ -38,6 +39,7 @@ typedef struct draw_env {
     int texw[7], texh[7];
     int par;        /* 1 while rows run on several threads: no cache fills */
     const u32 *fast_tex;   /* base level, when its wrap modes are plain repeat/clamp: the fast sampler */
+    const struct tex_repl *repl;   /* DOTR_TEX_REPLACE: a replacement picture for this texture (tools) */
     int ty0, ty1, tx0, tx1;   /* base-level rows and columns this primitive can sample (decoded before it draws) */
     int fast_w, fast_h, min_lin;
 } draw_env;
@@ -103,6 +105,7 @@ static void env_setup(draw_env *e)
     for (i = 0; i < 7; i++) e->tex[i] = NULL;
     e->par = 0;
     e->fast_tex = NULL;
+    e->repl = NULL;
     e->ty0 = 0; e->ty1 = 0x7FFFFFFF; e->tx0 = 0; e->tx1 = 0x7FFFFFFF;
 }
 
@@ -235,6 +238,10 @@ static void tex_prefetch(draw_env *e)
 }
 
 static __forceinline int ifloor(float f) { int i = (int)f; return i - (f < (float)i); }
+/* The nearest texel: on an exact texel border the GS takes the lower one (the game's UI draws sprites at half-pixel
+ * positions with half-texel UVs, so every pixel lands on a border; the higher texel puts the glyph's neighbour column
+ * at its right edge, BUG-6). */
+static __forceinline int inear(float f) { int i = (int)f; return i - 1 + (f > (float)i); }
 
 /* Base-level sampling with repeat or clamp wrapping, in fixed point (4 fractional bits, as the GS filters). */
 static inline int fwrap(int c, int size, int mode) { return mode == 0 ? c & (size - 1) : c < 0 ? 0 : c >= size ? size - 1 : c; }
@@ -244,7 +251,7 @@ static __forceinline u32 sample_fast(const draw_env *e, float u, float v, int li
     const u32 *tx = e->fast_tex;
     int w = e->fast_w, h = e->fast_h;
     if (!linear) {
-        int x = ifloor(u), y = ifloor(v);
+        int x = inear(u), y = inear(v);
         return tx[fwrap(y, h, e->wmt) * w + fwrap(x, w, e->wms)];
     } else {
         int fu = ifloor((u - 0.5f) * 16.0f), fv = ifloor((v - 0.5f) * 16.0f);
@@ -282,8 +289,8 @@ static u32 sample(draw_env *e, float u, float v, int lod)
 #define TEXEL(xx, yy) (tx && (unsigned)(xx) < (unsigned)w && (unsigned)(yy) < (unsigned)h ? tx[(yy) * w + (xx)] \
                                                                                            : texel_slow(e, tbp, tbw, (xx), (yy)))
     if (!linear) {
-        int x = wrap((int)floorf(u), w, e->wms, e->minu, e->maxu);
-        int y = wrap((int)floorf(v), h, e->wmt, e->minv, e->maxv);
+        int x = wrap(inear(u), w, e->wms, e->minu, e->maxu);
+        int y = wrap(inear(v), h, e->wmt, e->minv, e->maxv);
         return TEXEL(x, y);
     } else {
         float fu = u - 0.5f, fv = v - 0.5f;
@@ -337,6 +344,129 @@ typedef struct pix_in {
 static __forceinline void pixel_dest(draw_env *e, int x, int y, int r, int g, int b, int a, u32 z, int write_fb,
                                       int write_z, int write_rgb_only);
 
+/* ---- texture tools (stills, chatC upscale pilot; off unless set; exact renderer) ------------------------------
+ * DOTR_TEX_DUMP=<dir>: every texture drawn from, decoded through its CLUT as at that draw, as <dir>\<key>.png (RGBA,
+ * alpha as the GS stores it: 0x80 = opaque), and one line per primitive in <dir>/uvmap.txt: key, vertex count and
+ * each vertex's texel position (u v; a sprite gives its two corners). DOTR_TEX_REPLACE=<dir>: a texture with <dir>\<key>.rgba ("RGBA", u32 width, u32 height,
+ * then width*height RGBA bytes) is sampled from that picture instead, at the same UVs normalised (bilinear); not in the
+ * vanilla build (DOTR_VANILLA). */
+struct tex_repl { u32 key[6]; int w, h; const u8 *px; };
+static int tt_dump = -1, tt_repl;
+static char tt_dump_dir[400], tt_repl_dir[400];
+
+static u32 tex_clut_hash(const draw_env *e)
+{
+    u32 n, i, h = 2166136261u;
+    if (!(e->tpsm == PSMT8 || e->tpsm == PSMT8H || e->tpsm == PSMT4 || e->tpsm == PSMT4HL || e->tpsm == PSMT4HH)) return 0;
+    n = (e->tpsm == PSMT8 || e->tpsm == PSMT8H) ? 256 : 16;
+    for (i = 0; i < n; i++) {
+        u32 v;
+        if (e->cpsm == PSMCT16 || e->cpsm == PSMCT16S) v = gs.clut[(n == 16 ? e->csa * 16 + i : i) & 511];
+        else { u32 k = (n == 16 ? (e->csa & 15) * 16 + i : i) & 255; v = gs.clut[k] | ((u32)gs.clut[k + 256] << 16); }
+        h = (h ^ v) * 16777619u;
+    }
+    return h;
+}
+
+static void tex_key_name(const u32 *k, char *out, size_t n)
+{
+    snprintf(out, n, "tex_%04x_%02x_%ux%u_%02x_%08x", k[0], k[1], k[2], k[3], k[4], k[5]);
+}
+
+static const struct tex_repl *tex_tools(draw_env *e, const gs_vertex *v, int nv)
+{
+    static u32 seen[4096][6];
+    static int nseen;
+    static struct tex_repl reps[256];
+    static int nreps, nmiss;
+    static u32 miss[1024][6];
+    u32 k[6], w = 1u << e->tw, h = 1u << e->th;
+    char name[96], path[600];
+    int i;
+    if (tt_dump < 0) {
+#if DOTR_VANILLA
+        const char *d = getenv("DOTR_TEX_DUMP"), *r = NULL;   /* the vanilla build: no replacement, it changes the look */
+#else
+        const char *d = getenv("DOTR_TEX_DUMP"), *r = getenv("DOTR_TEX_REPLACE");
+#endif
+        tt_dump = d != NULL; tt_repl = r != NULL;
+        if (d) { snprintf(tt_dump_dir, sizeof tt_dump_dir, "%s", d); CreateDirectoryA(d, NULL); }
+        if (r) snprintf(tt_repl_dir, sizeof tt_repl_dir, "%s", r);
+    }
+    if (!tt_dump && !tt_repl) return NULL;
+    k[0] = e->tbp; k[1] = e->tpsm; k[2] = w; k[3] = h; k[4] = e->csa; k[5] = tex_clut_hash(e);
+    tex_key_name(k, name, sizeof name);
+    if (tt_dump) {
+        FILE *f;
+        float uv[3][2];
+        for (i = 0; i < nseen && memcmp(seen[i], k, sizeof k); i++) ;
+        if (i == nseen && nseen < 4096) {
+            const u32 *t = gs_texture(e->tbp, e->tbw, e->tpsm, w, h, e->cpsm, e->csa, e->ta0 | (e->ta1 << 8) | (e->aem << 16),
+                                      0, h - 1, 0, w - 1);
+            memcpy(seen[nseen++], k, sizeof k);
+            snprintf(path, sizeof path, "%s\\%s.png", tt_dump_dir, name);
+            if (t) gfx_write_png(path, t, (int)w, (int)h);
+        }
+        for (i = 0; i < nv && i < 3; i++) {   /* each vertex's texel position (a sprite: its two corners) */
+            if (e->fst) { uv[i][0] = v[i].u / 16.0f; uv[i][1] = v[i].v / 16.0f; }
+            else { float q = v[i].q != 0.0f ? v[i].q : 1.0f; uv[i][0] = v[i].s / q * (float)w; uv[i][1] = v[i].t / q * (float)h; }
+        }
+        snprintf(path, sizeof path, "%s\\uvmap.txt", tt_dump_dir);
+        if ((f = fopen(path, "a"))) {
+            fprintf(f, "%s %d", name, nv);
+            for (i = 0; i < nv && i < 3; i++) fprintf(f, " %.2f %.2f", uv[i][0], uv[i][1]);
+            fprintf(f, "\n");
+            fclose(f);
+        }
+    }
+    if (tt_repl) {
+        FILE *f;
+        for (i = 0; i < nreps; i++) if (!memcmp(reps[i].key, k, sizeof k)) return &reps[i];
+        for (i = 0; i < nmiss; i++) if (!memcmp(miss[i], k, sizeof k)) return NULL;
+        snprintf(path, sizeof path, "%s\\%s.rgba", tt_repl_dir, name);
+        if ((f = fopen(path, "rb")) && nreps < 256) {
+            char magic[4]; u32 rw = 0, rh = 0; u8 *px;
+            if (fread(magic, 1, 4, f) == 4 && !memcmp(magic, "RGBA", 4) && fread(&rw, 4, 1, f) == 1 && fread(&rh, 4, 1, f) == 1 &&
+                rw && rh && rw <= 16384 && rh <= 16384 && (px = (u8 *)malloc((size_t)rw * rh * 4)) != NULL) {
+                if (fread(px, 4, (size_t)rw * rh, f) == (size_t)rw * rh) {
+                    memcpy(reps[nreps].key, k, sizeof k); reps[nreps].w = (int)rw; reps[nreps].h = (int)rh; reps[nreps].px = px;
+                    fclose(f);
+                    hw_log(2, "tex: %s replaced by a %ux%u picture", name, rw, rh);
+                    return &reps[nreps++];
+                }
+                free(px);
+            }
+            fclose(f);
+        } else if (f) fclose(f);
+        if (nmiss < 1024) memcpy(miss[nmiss++], k, sizeof k);
+    }
+    return NULL;
+}
+
+/* the replacement picture at the same UVs, normalised: bilinear, repeat or clamp as the texture's wrap modes */
+static u32 repl_sample(const draw_env *e, float u, float v)
+{
+    const struct tex_repl *r = e->repl;
+    float fu = u / (float)(1 << e->tw) * (float)r->w - 0.5f, fv = v / (float)(1 << e->th) * (float)r->h - 0.5f;
+    int x0 = (int)floorf(fu), y0 = (int)floorf(fv), k;
+    float ax = fu - (float)x0, ay = fv - (float)y0;
+    int xs[2], ys[2];
+    u32 out = 0;
+    for (k = 0; k < 2; k++) {
+        int x = x0 + k, y = y0 + k;
+        xs[k] = e->wms == 0 ? ((x % r->w) + r->w) % r->w : x < 0 ? 0 : x >= r->w ? r->w - 1 : x;
+        ys[k] = e->wmt == 0 ? ((y % r->h) + r->h) % r->h : y < 0 ? 0 : y >= r->h ? r->h - 1 : y;
+    }
+    for (k = 0; k < 4; k++) {
+        const u8 *p00 = r->px + ((size_t)ys[0] * r->w + xs[0]) * 4, *p10 = r->px + ((size_t)ys[0] * r->w + xs[1]) * 4;
+        const u8 *p01 = r->px + ((size_t)ys[1] * r->w + xs[0]) * 4, *p11 = r->px + ((size_t)ys[1] * r->w + xs[1]) * 4;
+        float c = (p00[k] * (1 - ax) + p10[k] * ax) * (1 - ay) + (p01[k] * (1 - ax) + p11[k] * ax) * ay;
+        int ci = (int)(c + 0.5f);
+        out |= (u32)(ci < 0 ? 0 : ci > 255 ? 255 : ci) << (k * 8);
+    }
+    return out;
+}
+
 /* The source side of a pixel: texture, fog and the alpha test. Returns 0 when the alpha test drops it. */
 static __forceinline int pixel_src(draw_env *e, const pix_in *p, int *pr, int *pg, int *pb, int *pa, int *write_fb,
                                    int *write_z, int *write_rgb_only)
@@ -345,7 +475,8 @@ static __forceinline int pixel_src(draw_env *e, const pix_in *p, int *pr, int *p
 
     /* texture + texture function */
     if (e->tme) {
-        u32 t = (p->lod <= 0 && e->fast_tex) ? sample_fast(e, p->u, p->v, p->lod < 0 ? e->mmag : e->min_lin) : sample(e, p->u, p->v, p->lod);
+        u32 t = e->repl ? repl_sample(e, p->u, p->v)
+              : (p->lod <= 0 && e->fast_tex) ? sample_fast(e, p->u, p->v, p->lod < 0 ? e->mmag : e->min_lin) : sample(e, p->u, p->v, p->lod);
         int tr = t & 0xFF, tg = (t >> 8) & 0xFF, tb = (t >> 16) & 0xFF, ta = t >> 24;
         switch (e->tfx) {
         case 0:  /* modulate */
@@ -664,6 +795,7 @@ static void tri_rows(void *ctx, int ya, int yb)
      * the right the w's change by d0/d1/d2, so each attribute changes by a constant step */
     /* per-pixel steps of each attribute; z keeps double precision (24-32 bits), the rest are floats */
     double za = (double)a->z, zb = (double)b->z, zc = (double)c->z, zstep, zcur = 0;
+    int flatz = a->z == b->z && b->z == c->z;
     float fa[10], fb[10], fc[10], fstep[10], fcur[10];
     double da[10], db[10], dc[10];
     int nf = e->tme ? 10 : 5;
@@ -720,7 +852,9 @@ static void tri_rows(void *ctx, int ya, int yb)
                 }
             }
             if (e->iip) { p.r = (int)fcur[0]; p.g = (int)fcur[1]; p.b = (int)fcur[2]; p.a = (int)fcur[3]; }
-            p.z = zcur >= 4294967295.0 ? 0xFFFFFFFFu : zcur <= 0 ? 0 : (u32)zcur;
+            /* a triangle whose vertices share one depth has exactly that depth (the weights' rounding made 0xFFFFFF
+             * come out 0xFFFFFE on some pixels, failing a GEQUAL test against the card under it: BUG-13 flicker) */
+            p.z = flatz ? a->z : zcur >= 4294967295.0 ? 0xFFFFFFFFu : zcur <= 0 ? 0 : (u32)zcur;
             p.f = (int)fcur[4];
             if (e->tme) {
                 if (e->fst) tex_coords(e, &p, 0, 0, 1, fcur[8], fcur[9]);
@@ -1216,6 +1350,7 @@ void gs_draw_prim(const gs_vertex *v, int n)
     if (census_on < 0) census_on = getenv("DOTR_GS_CENSUS") ? atoi(getenv("DOTR_GS_CENSUS")) : 0;
     if (census_on > 0) census_add(type, gs_gpu_only ? 2 : (type != 7 && gs_par_threads() > 1) ? 1 : 0);
     env_setup(&e);
+    if (e.tme && (tt_dump || tt_repl)) e.repl = tex_tools(&e, v, type == 0 ? 1 : (type <= 2 || type == 6) ? 2 : 3);
     if (gs_gpu_on && type != 7) {
         gpu_queue_prim(&e, v, type, type == 0 ? 1 : (type <= 2 || type == 6) ? 2 : 3);
         if (gs_gpu_only) return;

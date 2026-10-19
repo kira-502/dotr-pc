@@ -274,18 +274,29 @@ static void test_texture(void)
     q_put(giftag(4, 1, 0, 0, 2, 0), 0);
     for (i = 0; i < 4; i++) { u32 k; for (k = 0; k < 4; k++) pk[npk].w[k] = 0x80000000u | (i * 4 + k) * 0x010203u; npk++; }
     flush3();
-    /* decal sprite with UV covering the texture exactly */
+    /* decal sprite with UV covering the texture exactly (texel centres: UV + 0.5, as the game sets them) */
     ad_begin(6);
     ad(0x06, 0x800 | (1ull << 14) | ((u64)PSMCT32 << 20) | (2ull << 26) | (2ull << 30) | (1ull << 34) | (1ull << 35));
     ad(0x14, 0);
     ad(0x00, 6 | (1 << 4) | (1 << 8));
-    ad(0x03, 0); ad(0x05, xyz(8, 8, 0));
-    ad(0x03, 64 | (64 << 16));
+    ad(0x03, 8 | (8 << 16)); ad(0x05, xyz(8, 8, 0));
+    ad(0x03, 72 | (72 << 16));
     flush3();
     ad_begin(1); ad(0x05, xyz(12, 12, 0)); flush3();
     ok = 1;
     for (y = 0; y < 4; y++) for (x = 0; x < 4; x++)
         if (gs_read_pixel(PSMCT32, 0, 10, 8 + x, 8 + y) != (0x80000000u | (y * 4 + x) * 0x010203u)) ok = 0;
+    CHECK(ok);
+    /* BUG-6: the same sprite half a pixel off (the window font centres narrow glyphs so): every pixel samples on a
+     * texel border, where the GS takes the lower texel, so the picture is still exact one pixel further on */
+    ad_begin(3);
+    ad(0x03, 8 | (8 << 16)); ad(0x05, (u64)(20 * 16 + 8) | ((u64)(20 * 16 + 8) << 16));
+    ad(0x03, 72 | (72 << 16));
+    flush3();
+    ad_begin(1); ad(0x05, (u64)(24 * 16 + 8) | ((u64)(24 * 16 + 8) << 16)); flush3();
+    ok = 1;
+    for (y = 0; y < 4; y++) for (x = 0; x < 4; x++)
+        if (gs_read_pixel(PSMCT32, 0, 10, 21 + x, 21 + y) != (0x80000000u | (y * 4 + x) * 0x010203u)) ok = 0;
     CHECK(ok);
     /* PSMT8 texture 16x16 with a CT32 CLUT (CSM1 layout) */
     reset_all();
@@ -299,8 +310,8 @@ static void test_texture(void)
     ad(0x06, 0x1000 | (2ull << 14) | ((u64)PSMT8 << 20) | (4ull << 26) | (4ull << 30) | (1ull << 34) | (1ull << 35) |
              ((u64)0x1200 << 37) | (1ull << 61));
     ad(0x00, 6 | (1 << 4) | (1 << 8));
-    ad(0x03, 0); ad(0x05, xyz(0, 0, 0));
-    ad(0x03, 256 | (256 << 16));
+    ad(0x03, 8 | (8 << 16)); ad(0x05, xyz(0, 0, 0));
+    ad(0x03, 264 | (264 << 16));
     flush3();
     ad_begin(1); ad(0x05, xyz(16, 16, 0)); flush3();
     ok = 1;
@@ -316,8 +327,8 @@ static void test_texture(void)
     ad(0x06, 0x1000 | (2ull << 14) | ((u64)PSMT4 << 20) | (4ull << 26) | (0ull << 30) | (1ull << 34) | (1ull << 35) |
              ((u64)0x1200 << 37) | ((u64)PSMCT16 << 51) | (1ull << 56) | (1ull << 61));
     ad(0x00, 6 | (1 << 4) | (1 << 8));
-    ad(0x03, 0); ad(0x05, xyz(0, 0, 0));
-    ad(0x03, 256 | (16 << 16));
+    ad(0x03, 8 | (8 << 16)); ad(0x05, xyz(0, 0, 0));
+    ad(0x03, 264 | (24 << 16));
     flush3();
     ad_begin(1); ad(0x05, xyz(16, 1, 0)); flush3();
     CHECKEQ(gs_read_pixel(PSMCT32, 0, 10, 5, 0), 0x7F000000u | ((5u << 3) << 16));

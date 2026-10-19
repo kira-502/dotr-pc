@@ -1,5 +1,5 @@
 /* Write a 5-byte x86 jump at every PS2 function address, so function pointers found in the game's own data
- * (PS2 addresses) call the native functions directly (PORT-PLAN.md 4.1). */
+ * (PS2 addresses) call the native functions directly. */
 #include <windows.h>
 #include <stdio.h>
 #include <string.h>

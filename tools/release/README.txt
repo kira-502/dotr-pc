@@ -15,8 +15,6 @@ Controls
   Keyboard (the game window must be in front): arrows, Z = Cross, X = Circle, A = Square, S = Triangle,
     Q / W = L1 / R1, E / R = L2 / R2, Enter = Start, right Shift = Select.
   In a duel: Circle opens your hand, Cross selects and confirms, Start ends your turn.
-  Fast-forward: HOLD Tab, or hold the controller's right stick to the right. The game runs several times
-    faster while you hold it (sound may skip). Let go for normal speed.
   Alt+Enter or F11: full screen on and off.
   F12 (or push the controller's right stick to the LEFT): "something looks wrong here". See "Reporting a
     problem" below.

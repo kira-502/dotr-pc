@@ -1,5 +1,5 @@
 /*
- * rc.h - the CPU state and memory access used by translated module code (lane R, PORT-PLAN.md 4.3).
+ * rc.h - the CPU state and memory access used by translated module code (lane R).
  *
  * A translated module function is `void f(RcCpu *c)`: arguments and results live in c, exactly where the EE keeps
  * them (a0-a3/t0-t3 in r[4..11], v0/v1 in r[2..3], f12-f19 in f[12..19], f0 in f[0], sp in r[29]). The PS2 stack

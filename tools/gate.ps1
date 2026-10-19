@@ -1,4 +1,4 @@
-# The merge gate (dotr-big/BUILD-ROUND-BRIEF.md "Merge gate"): nothing reaches main without it.
+# The merge gate: nothing reaches main without it.
 # usage: tools\gate.cmd <build folder>      e.g. tools\gate.cmd build\Release\bin
 # Runs on a scratch copy in %TEMP% (never in the build folder, never on DotR-PC-builds\M1g), Idle priority, no window:
 #   1. self-test, rc-check (762 modules), the unit tests found in the folder

@@ -101,6 +101,12 @@ static void vertex_kick(u64 xyz, int with_fog, int draw)
 
     nv.x = (s32)(xyz & 0xFFFF) - (s32)BITS(c->xyoffset, 0, 16);
     nv.y = (s32)((xyz >> 16) & 0xFFFF) - (s32)BITS(c->xyoffset, 32, 16);
+    {   /* DOTR_GS_SHIFT=dx,dy[,fbp] (1/16 pixel): every vertex moved, or only those drawn into frame page fbp
+         * (stills at 4x: 16 passes shifted by quarter pixels, interleaved; chatC upscale pilot) */
+        static int sh = -1, sdx, sdy, sfbp = -1;
+        if (sh < 0) { const char *e = getenv("DOTR_GS_SHIFT"); sh = e && sscanf(e, "%d,%d,%d", &sdx, &sdy, &sfbp) >= 2; }
+        if (sh && (sfbp < 0 || (int)BITS(c->frame, 0, 9) == sfbp)) { nv.x += sdx; nv.y += sdy; }
+    }
     if (with_fog) {
         nv.z = (u32)((xyz >> 32) & 0xFFFFFF);
         nv.f = (u8)(xyz >> 56);
@@ -127,14 +133,18 @@ static void vertex_kick(u64 xyz, int with_fog, int draw)
         u64 pr = (gs.prmodecont & 1) ? gs.prim : gs.prmode;
         const gs_ctx *c = &gs.ctx[(pr >> 9) & 1];
         int i;
-        char buf[256];
-        int o = snprintf(buf, sizeof buf, "prim %u tme %u fst %u abe %u ctx %u frame %016llx tex0 %016llx tex1 %016llx test %llx zbuf %llx alpha %llx scissor %u-%u,%u-%u |",
+        char buf[768];
+        int o = snprintf(buf, sizeof buf, "prim %u tme %u fst %u abe %u ctx %u frame %016llx tex0 %016llx tex1 %016llx test %llx zbuf %llx alpha %llx texa %llx scissor %u-%u,%u-%u |",
                          type, (u32)(pr >> 4) & 1, (u32)(pr >> 8) & 1, (u32)(pr >> 6) & 1, (u32)(pr >> 9) & 1,
-                         (unsigned long long)c->frame, (unsigned long long)c->tex0, (unsigned long long)c->tex1, (unsigned long long)c->test, (unsigned long long)c->zbuf, (unsigned long long)c->alpha, BITS(c->scissor, 0, 11), BITS(c->scissor, 16, 11),
+                         (unsigned long long)c->frame, (unsigned long long)c->tex0, (unsigned long long)c->tex1, (unsigned long long)c->test, (unsigned long long)c->zbuf, (unsigned long long)c->alpha, (unsigned long long)gs.texa, BITS(c->scissor, 0, 11), BITS(c->scissor, 16, 11),
                          BITS(c->scissor, 32, 11), BITS(c->scissor, 48, 11));
-        for (i = 0; i < need && o < (int)sizeof buf - 48; i++)   /* window coordinates (offset already applied) */
-            o += snprintf(buf + o, sizeof buf - (size_t)o, " (%.1f,%.1f uv %u,%u a%u)", v[i].x / 16.0, v[i].y / 16.0,
-                          v[i].u >> 4, v[i].v >> 4, v[i].a);
+        for (i = 0; i < need && o < (int)sizeof buf - 48; i++) {   /* window coordinates (offset already applied) */
+            o += snprintf(buf + o, sizeof buf - (size_t)o, " (%.1f,%.1f uv %u,%u rgb %02x%02x%02x a%u z%u", v[i].x / 16.0, v[i].y / 16.0,
+                          v[i].u >> 4, v[i].v >> 4, v[i].r, v[i].g, v[i].b, v[i].a, (u32)v[i].z);
+            if (((pr >> 4) & 1) && !((pr >> 8) & 1) && o < (int)sizeof buf - 48)   /* STQ texturing: s t q too */
+                o += snprintf(buf + o, sizeof buf - (size_t)o, " stq %g %g %g", v[i].s, v[i].t, v[i].q);
+            if (o < (int)sizeof buf - 2) buf[o++] = ')', buf[o] = 0;
+        }
         hw_log(2, "%s", buf);
     }
     if (draw) {

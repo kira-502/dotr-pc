@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(DotRPC C)
 
-# 32-bit Windows only (PORT-PLAN.md 2.4): PS2 RAM lives at its console addresses.
+# 32-bit Windows only: PS2 RAM lives at its console addresses.
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
   message(FATAL_ERROR "DotR-PC builds 32-bit only: run build.cmd (vcvars32 + clang-cl)")
 endif()
@@ -19,6 +19,14 @@ include_directories(${CMAKE_SOURCE_DIR}/hw)
 option(DOTR_DEV "developer switches" ON)
 if(DOTR_DEV)
   add_compile_definitions(DOTR_DEV)
+endif()
+# the vanilla edition: the PS2 game as it was, nothing added (a difference from the PS2 is a bug); OFF only for the upgrades
+# edition. Always defined as 0 or 1: code tests it with #if DOTR_VANILLA / #if !DOTR_VANILLA.
+option(DOTR_VANILLA "the PS2 game as it was: no fast-forward, no texture replacement" ON)
+if(DOTR_VANILLA)
+  add_compile_definitions(DOTR_VANILLA=1)
+else()
+  add_compile_definitions(DOTR_VANILLA=0)
 endif()
 
 enable_testing()

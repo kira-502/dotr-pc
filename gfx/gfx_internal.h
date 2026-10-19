@@ -105,7 +105,8 @@ void gs_write_hwreg(const u32 *words, u32 nwords); /* image data (HWREG / GIF IM
 void gs_local_to_host(u32 dst_addr, u32 qwc);
 void gs_draw_prim(const gs_vertex *v, int n);   /* n = vertices of one primitive (1, 2, 3; sprite 2) */
 void vu1_stats_field(void);                     /* DOTR_VU1_STATS: VU1 work per field (vu1.c) */
-void gs_census_field(void);                     /* DOTR_GS_CENSUS: drawing-mode survey lines (gs_draw.c) */
+void gs_census_field(void);
+int gfx_write_png(const char *path, const u32 *rgba, int w, int h);   /* RGBA PNG, alpha kept (tools) */                     /* DOTR_GS_CENSUS: drawing-mode survey lines (gs_draw.c) */
 /* Primitives may be queued and drawn in batches by several threads; gs_flush draws everything queued.
  * Anything that reads or writes GS memory outside drawing calls it first. gs_in_dma > 0 lets a whole DMA
  * transfer batch up (it flushes at its end). */

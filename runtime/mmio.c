@@ -76,6 +76,10 @@ static void dma_start(uint32_t base, uint32_t chcr)
             }
         }
     }
+    {
+        void rt_mark_dma(int channel, uint32_t madr, uint32_t qwc, uint32_t tadr, int mode);   /* runtime/slackmark.c */
+        if (ch == HW_DMA_VIF1 || ch == HW_DMA_GIF) rt_mark_dma(ch, k.madr, k.qwc, k.tadr, k.mode);
+    }
     if (!gfx_dma_kick(&k) && !(warned & (1u << ch))) {
         warned |= 1u << ch;
         hw_log(1, "mmio: DMA channel %d started, nobody handles it yet (chcr %08X)", ch, chcr);

@@ -1,17 +1,17 @@
 {
  "sony_native_files": [
-  "main_026.c",
-  "main_027.c"
+  "sdk_libdev.c",
+  "sdk_libvu0_1.c"
  ],
  "patches": [
   {
-   "file": "main_003.c",
+   "file": "sound_sdfs.c",
    "why": "GCC-2 varargs builtins -> C varargs (SDRPC_SendCommand)",
    "old": "typedef char *VaList_0010C720;\n#define VA_START_0010C720(ap, parm) \\\n    ((ap) = (char *)__builtin_next_arg(parm) - (__builtin_args_info(2) >= 8 ? 0 : (8 - __builtin_args_info(2)) * 8))\n#define VA_ARG_0010C720(ap, T) (*(T *)((ap += 8) - 8))",
    "new": "typedef __builtin_va_list VaList_0010C720; /* port */\n#define VA_START_0010C720(ap, parm) __builtin_va_start(ap, parm)\n#define VA_ARG_0010C720(ap, T) __builtin_va_arg(ap, T)\n\n"
   },
   {
-   "file": "main_063.c",
+   "file": "campaign_tkcamp.c",
    "why": "pad script v2 (runtime/padscript.c): 'wait dialog' sees a story event window while it is drawn",
    "old": "s32 Taku_Camp_Event_Window(s32 arg0) {\n    s16 ny;",
    "new": "s32 Taku_Camp_Event_Window(s32 arg0) {\n    s16 ny;\n    rt_dialog_drawn();"
@@ -19,88 +19,154 @@
  ],
  "source_patches": [
   {
-   "file": "main_053.c",
+   "file": "game_szmsg.c",
    "why": "64-bit EE registers as s64 through a function pointer: on x86 each s64 takes two stack slots and SzMsg_DrawRect_Pipe (s32 x, y) reads garbage; the values are 32-bit coordinates",
    "old": "typedef s32 (*Draw_001FE660)(s32, s32, s64, s64, Rect_001FE660 *, s32);",
    "new": "typedef s32 (*Draw_001FE660)(s32, s32, s32, s32, Rect_001FE660 *, s32);"
   },
   {
-   "file": "main_053.c",
+   "file": "game_szmsg.c",
    "why": "see Draw_001FE660 above",
    "old": "s32 SzMsg_DrawRatioX_Pipe(s32 packet, s32 slot, s64 x, s64 y,",
    "new": "s32 SzMsg_DrawRatioX_Pipe(s32 packet, s32 slot, s32 x, s32 y,"
   },
   {
-   "file": "main_019.c",
+   "file": "sdk_kernel_syscalls_1.c",
    "why": "modules: the module's bytes are at 0x01E00000 now; switch its translated code in before its constructors run (recomp/rc_port.h)",
    "old": "    FlushCache(2);\n    if (size != 0) {",
    "new": "    rt_overlay_switch();\n    FlushCache(2);\n    if (size != 0) {"
   },
   {
-   "file": "main_037.c",
+   "file": "game_szgame.c",
    "why": "bot duels (runtime/botduel.c): seed the random generator and make human sides the computer before the duel is set up",
    "old": "        SzDuel_SetPlayer(0, state->menu_nums[3] % 1000);\n        SzDuel_SetPlayer(1, state->menu_nums[4] % 1000);\n",
    "new": "        rt_bot_duel_start();\n        SzDuel_SetPlayer(0, rt_bot_kind(0, state->menu_nums[3] % 1000, state->menu_nums[4] % 1000));\n        SzDuel_SetPlayer(1, rt_bot_kind(1, state->menu_nums[4] % 1000, state->menu_nums[3] % 1000));\n"
   },
   {
-   "file": "main_042.c",
+   "file": "duel_szduel_act.c",
    "why": "bot duels: report the result as the duel ends (winner DUEL[0xD50], reason DUEL[0xD51])",
    "old": "            func_00272CC0(DUEL[0xD50], DUEL[0xD51]);\n",
    "new": "            rt_bot_duel_end(DUEL[0xD50], DUEL[0xD51]);\n            func_00272CC0(DUEL[0xD50], DUEL[0xD51]);\n"
   },
   {
-   "file": "main_037.c",
+   "file": "game_szgame.c",
    "why": "--debug-menu (dev builds only, runtime/dotr_main.c): after the memory-card check go to the game's developer menu (mode -1, SzGame_ActMenu) instead of the title (mode 10)",
-   "old": "        D_00317449.selected = 10;\n",
-   "new": "        D_00317449.selected = rt_first_mode(10);\n"
+   "old": "        setModeIndex.selected = 10;\n",
+   "new": "        setModeIndex.selected = rt_first_mode(10);\n"
   },
   {
-   "file": "main_077.c",
+   "file": "rules_ta_effects_3.c",
    "why": "TaHand_GetCardEffect returns a pointer into its own stack frame and callers read it after their next call (TaLogicCom_IsDoCerem_00112850 reads data->value after Ta_GetCeremSacrifice): on x86 that call overwrites it. Kept in a static buffer (the AI runs on one thread)",
    "old": "    u8 data[0x60];\n\n    if (nCardNo == 0x3E7) {\n        return NULL;\n    }\n    SzDuel_InitCardInfo(data, nCardNo);\n    return data + 8 + EffIdxID * 8;\n",
    "new": "    static u8 data[0x60];\n\n    if (nCardNo == 0x3E7) {\n        return NULL;\n    }\n    SzDuel_InitCardInfo(data, nCardNo);\n    return data + 8 + EffIdxID * 8;\n"
   },
   {
-   "file": "main_000.c",
+   "file": "core_main.c",
    "why": "bot duels (hle/botduel.c): with --bot-duel, the main loop starts a computer-vs-computer duel once the game has loaded, the way the Custom Duel menu does (SzGame_Push(1, 1))",
    "old": "    SzFile_DoRequest();\n    SzGame_ModeAct();",
    "new": "    SzFile_DoRequest();\n    rt_bot_tick();\n    SzGame_ModeAct();"
   },
   {
-   "file": "main_034.c",
+   "file": "sdk_newlib_2.c",
    "why": "the lock release falls off its end when the count stays above 0; the PS2 returns the new count ($v0 holds it, asm func_00198A88); found by lane R's oracle",
    "old": "        return ((s32 (*)(s32))SignalSema)(D_0028D114);\n    }\n}\n",
    "new": "        return ((s32 (*)(s32))SignalSema)(D_0028D114);\n    }\n    return D_0028FF04;\n}\n"
   },
   {
-   "file": "main_002.c",
+   "file": "effect_lib_objlib.c",
    "why": "lane R oracle: *row = out copies an unset 4th float; the PS2 stores only x, y, z (w stays as it was)",
    "old": "int MATRIX_XYZ_ININ33(void *row_v, void *v_v, int axis, int unit)\n{\n    struct DotrPaintVector * row = row_v;\n    struct DotrPaintVector * v = v_v;\n    union DotrMatrixAngles rot = *(union DotrMatrixAngles *)v;\n    struct DotrPaintVector out;",
    "new": "int MATRIX_XYZ_ININ33(void *row_v, void *v_v, int axis, int unit)\n{\n    struct DotrPaintVector * row = row_v;\n    struct DotrPaintVector * v = v_v;\n    union DotrMatrixAngles rot = *(union DotrMatrixAngles *)v;\n    struct DotrPaintVector out = *row;"
   },
   {
-   "file": "main_001.c",
+   "file": "effect_lib_objlib.c",
    "why": "lane R oracle: rect is written out unset on the unmatched paths",
    "old": "void RH2_DATA_IN(void *dst, s16 kind, s16 index) {\n    Rect_00105D00 rect;",
    "new": "void RH2_DATA_IN(void *dst, s16 kind, s16 index) {\n    Rect_00105D00 rect = { 0 };"
   },
   {
-   "file": "main_036.c",
+   "file": "sdk_lgcc.c",
    "why": "libgcc's 64-bit divide/modulo (func_001A0660/0CF8/1388/1908, used by the duel's angle maths): umul_ppmm is a MIPS multu asm statement, which the generator turns into 0, so a divisor above 32 bits gave a wrong quotient; the same 32x32->64 multiply in C",
    "old": "#define umul_ppmm(w1, w0, u, v)     __asm__(\"multu %2,%3\" : \"=l\"(w0), \"=h\"(w1) : \"d\"((u32)(u)), \"d\"((u32)(v)))",
    "new": "#define umul_ppmm(w1, w0, u, v)     do { u64 __p_ = (u64)(u32)(u) * (u32)(v); (w1) = (u32)(__p_ >> 32); (w0) = (u32)__p_; } while (0)"
   },
   {
-   "file": "main_072.c",
+   "file": "rules_ta_util.c",
    "why": "Ta_ConvBitLengthToNumericLength (the AI's n-bit masks, Ta_* in main_072): the asm sums pow(2.0, i) for i < n in the EE's software doubles (func_001A2EB0 int->double, func_001A6BE8 -> pow, func_001A2858 add, func_001A2F68 double->int), so it returns 2^n - 1. The decomp's soft-double calls typed as ints came out as func_001A2F68(0) (always 0) and pow called through an int cast, which left one x87 register pushed per call: after 8 calls every float result in the program was NaN (lane G's oracle, seed 2). Same sum in plain C",
    "old": "    for (; i < bit; i++) {\n        temp_s0 = func_001A6BE8(0x4000000000000000LL, func_001A2EB0(i));\n        var_s0 = func_001A2F68(func_001A2858(func_001A2EB0(var_s0), temp_s0));\n    }\n    return var_s0;",
    "new": "    (void)temp_s0;\n    for (; i < bit; i++) {\n        var_s0 = (s32)((double)var_s0 + (double)(1u << (i & 31)));\n    }\n    return var_s0;"
   },
   {
-   "file": "main_011.c",
+   "file": "ai_mai.c",
    "why": "TaLogic_GetMinimumTask_AtkMission_00145400 / _00149C60 (both sites): 'targetX = targetPosition & 0xFF, targetPosition >>= 8' as two arguments of one call is unsequenced C; the asm takes the low byte first, then shifts (t1 = s0 & 0xFF, t2 = s0 >> 8). Done in that order before the call",
    "old": "        TaLogic_GetInvadeRoot(positionY, positionX, candidates,\n                     originX, originY, targetX = targetPosition & 0xFF, targetPosition >>= 8,\n",
    "new": "        targetX = targetPosition & 0xFF;\n        targetPosition >>= 8;\n        TaLogic_GetInvadeRoot(positionY, positionX, candidates,\n                     originX, originY, targetX, targetPosition,\n"
+  },
+  {
+   "file": "ai_tristan.c",
+   "why": "TaLogic_GetMinimumTask_AtkMission_00145400 / _00149C60 (both sites): 'targetX = targetPosition & 0xFF, targetPosition >>= 8' as two arguments of one call is unsequenced C; the asm takes the low byte first, then shifts (t1 = s0 & 0xFF, t2 = s0 >> 8). Done in that order before the call",
+   "old": "        TaLogic_GetInvadeRoot(positionY, positionX, candidates,\n                     originX, originY, targetX = targetPosition & 0xFF, targetPosition >>= 8,\n",
+   "new": "        targetX = targetPosition & 0xFF;\n        targetPosition >>= 8;\n        TaLogic_GetInvadeRoot(positionY, positionX, candidates,\n                     originX, originY, targetX, targetPosition,\n"
+  },
+  {
+   "file": "game_szview.c",
+   "why": "BUG-8: the EE FPU rounds this add toward zero (runtime/eefloat.c ee_add_rz); with the PC rounding a camera straight above its look point gets yaw 3FC90FDC instead of the PS2's 3FC90FD8, fixed angle 16384 instead of 16383, and the duel-board camera ends up in the ground",
+   "old": "func_001A6C30(6.2831855f + result.y, ",
+   "new": "func_001A6C30(ee_add_rz(6.2831855f, result.y), "
+  },
+  {
+   "file": "game_szview.c",
+   "why": "see the first BUG-8 rule",
+   "old": "func_001A6C30(6.2831855f + entry->param.y, ",
+   "new": "func_001A6C30(ee_add_rz(6.2831855f, entry->param.y), "
+  },
+  {
+   "file": "game_szview_look.c",
+   "why": "see the first BUG-8 rule",
+   "old": "func_001A6C30(6.2831855f + entry->param.y, ",
+   "new": "func_001A6C30(ee_add_rz(6.2831855f, entry->param.y), "
+  },
+  {
+   "file": "game_szview_look.c",
+   "why": "see the first BUG-8 rule",
+   "old": "func_001A6C30(6.2831855f + (camera->yaw + fparg0), ",
+   "new": "func_001A6C30(ee_add_rz(6.2831855f, ee_add_rz(camera->yaw, fparg0)), "
+  },
+  {
+   "file": "game_szview_look.c",
+   "why": "see the first BUG-8 rule",
+   "old": "func_001A6C30(6.2831855f + polar.y, ",
+   "new": "func_001A6C30(ee_add_rz(6.2831855f, polar.y), "
+  },
+  {
+   "file": "duel_szduel_builddeck.c",
+   "why": "see the first BUG-8 rule",
+   "old": "func_001A6C30(6.2831855f + (camera.y + yaw), ",
+   "new": "func_001A6C30(ee_add_rz(6.2831855f, ee_add_rz(camera.y, yaw)), "
+  },
+  {
+   "file": "duel_szduel_act.c",
+   "why": "see the first BUG-8 rule",
+   "old": "func_001A6C30(6.2831855f + (3.1415927f + pos2.y), ",
+   "new": "func_001A6C30(ee_add_rz(6.2831855f, ee_add_rz(3.1415927f, pos2.y)), "
+  },
+  {
+   "file": "battle_szbattle.c",
+   "why": "lSzBattle_DrawFakeShadow (BUG-7, dark wall-like slabs over the 3D battle floor): the shadow bands' TEX0/TEX1 (s64 saved[3], filled by RhBase_GetTextureInfoForRender) sit at header+0x18 on the EE stack (sp+0x278 header, sp+0x290 saved), where ExSortNode_Pipe reads a type-0x35 header's texture registers; the stack slack moved them away, so each band sampled a wrong texture. saved now lives at the header's end",
+   "old": "    u64 value;\n    u8 tail[8];\n} Header_001E6F90;",
+   "new": "    u64 value;\n    u8 tail[8];\n    s64 saved[3]; /* port: the EE stack's s64 saved[3], right after the header's 0x18 bytes */\n} Header_001E6F90;"
+  },
+  {
+   "file": "battle_szbattle.c",
+   "why": "see lSzBattle_DrawFakeShadow above",
+   "old": "    s64 saved[3] __attribute__((aligned(8)));\n",
+   "new": ""
+  },
+  {
+   "file": "battle_szbattle.c",
+   "why": "see lSzBattle_DrawFakeShadow above",
+   "old": "        func_0020AA30(saved, saved + 1);\n",
+   "new": "        func_0020AA30(header.saved, header.saved + 1);\n"
   }
  ],
  "cut_why": "the PSS movie player (movie_play and everything only it reaches) is lane C movie/movie_play.c",

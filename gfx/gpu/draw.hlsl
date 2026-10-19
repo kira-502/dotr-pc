@@ -163,8 +163,8 @@ uint sample_tex(Prim p, precise float u, precise float v, int lod)
         u = u / (float)(1 << lod); v = v / (float)(1 << lod);
     }
     if (!lin) {
-        int x = wrapc((int)floor(u), w, p.wms, p.minu, p.maxu);
-        int y = wrapc((int)floor(v), h, p.wmt, p.minv, p.maxv);
+        int x = wrapc((int)ceil(u) - 1, w, p.wms, p.minu, p.maxu);   // the lower texel on a border (gs_draw.c inear)
+        int y = wrapc((int)ceil(v) - 1, h, p.wmt, p.minv, p.maxv);
         return texel_at(p, tbp, tbw, x, y);
     } else {
         precise float fu = u - 0.5f, fv = v - 0.5f;
@@ -402,7 +402,8 @@ void tri_pixel(Prim p, int x, int y)
         float u = 0, v = 0;
         if (p.iip) { r = (int)fcur[0]; g = (int)fcur[1]; b = (int)fcur[2]; a = (int)fcur[3]; }
         else { r = p.vflat.r; g = p.vflat.g; b = p.vflat.b; a = p.vflat.a; }
-        zp = zcur >= 4294967295.0 ? 0xFFFFFFFFu : zcur <= 0.0 ? 0u : (uint)zcur;
+        zp = (A.z == B.z && B.z == C.z) ? A.z   // one depth on every vertex: exactly that depth (gs_draw.c tri_rows)
+           : zcur >= 4294967295.0 ? 0xFFFFFFFFu : zcur <= 0.0 ? 0u : (uint)zcur;
         f = (int)fcur[4];
         if (p.tme) {
             if (p.fst) { u = fcur[8] / 16.0f; v = fcur[9] / 16.0f; }
@@ -453,7 +454,8 @@ void tri_pixel(Prim p, int x, int y)
         float u = 0, v = 0;
         if (p.iip) { r = (int)fcur[0]; g = (int)fcur[1]; b = (int)fcur[2]; a = (int)fcur[3]; }
         else { r = p.vflat.r; g = p.vflat.g; b = p.vflat.b; a = p.vflat.a; }
-        zp = zcur >= 4294967295.0 ? 0xFFFFFFFFu : zcur <= 0.0 ? 0u : (uint)zcur;
+        zp = (A.z == B.z && B.z == C.z) ? A.z   // one depth on every vertex: exactly that depth (gs_draw.c tri_rows)
+           : zcur >= 4294967295.0 ? 0xFFFFFFFFu : zcur <= 0.0 ? 0u : (uint)zcur;
         f = (int)fcur[4];
         if (p.tme) {
             if (p.fst) { u = fcur[8] / 16.0f; v = fcur[9] / 16.0f; }

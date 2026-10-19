@@ -14,6 +14,21 @@ NO_DEST = re.compile(r'^(s[bhwdq]|sw[lr]|sd[lr]|swc1|sdc1|sqc2|b\w*|j|jr|jal|nop
                      r'mtc1|ctc1|c\.\w+|teq\w*|cache|pref)$')
 
 
+_ASM = {}
+
+
+def _asm_path(asm_root, name):
+    """a function's matched asm: asm/matchings/<file>/<name>.s, or <area>/<file>/<name>.s since the decomp's
+    Konami file layout (32a9475b)"""
+    if asm_root not in _ASM:
+        idx = {}
+        for dp, _, fs in os.walk(asm_root):
+            for f in fs:
+                if f.endswith('.s'): idx.setdefault(f[:-2], os.path.join(dp, f))
+        _ASM[asm_root] = idx
+    return _ASM[asm_root].get(name)
+
+
 def parse(path):
     out = []
     for ln in open(path, errors='replace'):
@@ -24,10 +39,7 @@ def parse(path):
 
 def find(asm_root, name, n_int_params, callee_int_count):
     """returns (callee, [register indices passed through]) or None"""
-    path = None
-    for seg in os.listdir(asm_root):
-        p = os.path.join(asm_root, seg, name + '.s')
-        if os.path.exists(p): path = p; break
+    path = _asm_path(asm_root, name)
     if not path: return None
     written = set()
     ins = parse(path)
@@ -57,10 +69,7 @@ def find(asm_root, name, n_int_params, callee_int_count):
 def v0_from_last_call(asm_root, name):
     """True when the matched asm leaves $v0 alone after its last call: the function returns that call's result
     even where its C has no return (loops.fall_through_returns)."""
-    path = None
-    for seg in os.listdir(asm_root):
-        p = os.path.join(asm_root, seg, name + '.s')
-        if os.path.exists(p): path = p; break
+    path = _asm_path(asm_root, name)
     if not path: return False
     ins = parse(path)
     last = max((i for i, (mn, _) in enumerate(ins) if mn == 'jal'), default=-1)
@@ -73,10 +82,7 @@ def v0_from_last_call(asm_root, name):
 def own_untouched(asm_root, name, n_int_params):
     """The definition's own integer parameters still in their argument registers at its first call (any path):
     a call the C writes with fewer arguments passes them on there (Ta_ManageHandEffect hands its arg0 on)."""
-    path = None
-    for seg in os.listdir(asm_root):
-        p = os.path.join(asm_root, seg, name + '.s')
-        if os.path.exists(p): path = p; break
+    path = _asm_path(asm_root, name)
     if not path: return []
     written = set()
     ins = parse(path)

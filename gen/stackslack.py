@@ -19,7 +19,13 @@ import re
 COPY_SINKS = set()     # set by porter from rules.json "copy_whole_sinks"
 
 DECL = re.compile(r'(?m)^([ \t]+)((?:const\s+|volatile\s+)*(?:struct\s+|union\s+)?\w+)\s+(\w+)\s*((?:\[[^\]\n]*\])*)'
-                  r'\s*(=\s*[^;]*?)?;')
+                  r'(?P<attr>)\s*(?P<init>=\s*[^;]*?)?;')
+# PORTER_SLACK_MARK=1 (porter): the marker build for finding stack packets read past their end
+# (a packet whose reader takes more words than its C type holds). Locals with __attribute__((aligned(N))) are wrapped too,
+# and every slack starts as 0xA5 bytes; the packet readers and the DMA check (runtime/slackmark.c) log any marker they meet.
+MARK = False
+DECL_MARK = re.compile(r'(?m)^([ \t]+)((?:const\s+|volatile\s+)*(?:struct\s+|union\s+)?\w+)\s+(\w+)\s*((?:\[[^\]\n]*\])*)'
+                       r'(?P<attr>\s*__attribute__\(\(aligned\(\d+\)\)\))?\s*(?P<init>=\s*[^;]*?)?;')
 zeroed = [0]       # locals copied out whole that now start at zero (reported by porter)
 KEYWORDS = {'return', 'goto', 'case', 'else', 'typedef', 'extern', 'static', 'register', 'sizeof', 'if', 'while',
             'for', 'switch', 'do', 'break', 'continue'}
@@ -43,8 +49,8 @@ def wrap(t, functions, aggregate):
         m.group(0) for m in re.finditer(r'(?m)^[ \t]*#[ \t]*define\b(?:[^\n]*\\\n)*[^\n]*', t))))
     for fname, h, b0, b1, st in functions:
         body = t[b0:b1]
-        for m in DECL.finditer(body):
-            ind, ty, name, arr, init = m.group(1), m.group(2).strip(), m.group(3), m.group(4), m.group(5)
+        for m in (DECL_MARK if MARK else DECL).finditer(body):
+            ind, ty, name, arr, init = m.group(1), m.group(2).strip(), m.group(3), m.group(4), m.group('init')
             first = ty.split()[0]
             if first in KEYWORDS or name in KEYWORDS or ty in ('return',) or name in in_macros: continue
             # a member of a struct/union defined inside the function is not a local
@@ -80,6 +86,8 @@ def wrap(t, functions, aggregate):
                 zeroed[0] += 1
             decl = '%sstruct { %s v%s; u8 slack_[16]; } __attribute__((aligned(16))) %s__s%s;' % (
                 ind, ty, arr, name, init_s)
+            if MARK:
+                decl += ' __builtin_memset(%s__s.slack_, 0xA5, 16);' % name
             edits.append((b0 + m.start(), b0 + m.end(), decl))
             for p in uses:
                 edits.append((b0 + p, b0 + p + len(name), '%s__s.v' % name))

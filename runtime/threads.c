@@ -198,12 +198,16 @@ static void hitch_check(void)
     rt_hitch_disc_bytes = 0;
 }
 
-/* fast-forward held (or DOTR_FF_FORCE=1, for measuring it windowless) */
+/* fast-forward held (or DOTR_FF_FORCE=1, for measuring it windowless); none in the vanilla edition */
 static int ff_on(void)
 {
+#if DOTR_VANILLA
+    return 0;
+#else
     static int force = -1;
     if (force < 0) force = getenv("DOTR_FF_FORCE") != NULL;
     return rt_fast_forward || force;
+#endif
 }
 
 /* The x87 register stack must be empty here (a call boundary: compiled code keeps no x87 value across a call). A
